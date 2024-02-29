@@ -1,4 +1,4 @@
-import json, os, logging, requests
+import json,os, logging, requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, BackgroundTasks, Header, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -87,13 +87,10 @@ def chatgpt(question: Question) -> str:
     200字以内の短いコメントを出力。
     出力形式は厳密なJSON形式を守って。
     {
-        'ansewer': (短い答え),
-        'type':(返信タイプ)
-
+        'answer': (短い答え),
+        'type':(返信タイプ code,sql,text)
     }
-
     """
-
 
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo-1106",
@@ -109,7 +106,15 @@ def chatgpt(question: Question) -> str:
             }
         ],
     )
-    return response.choices[0].message.content.strip()
+    #return response.choices[0].message.content.strip()
+    content = json.loads(response.choices[0].message.content.strip())
+    type = content.get("type","")
+    if type == "code":
+        return "プログラムを実行しました。"
+    elif type == "text":
+        return content.get("answer","")
+
+
 # Run application
 if __name__ == "__main__":
     app.run()
