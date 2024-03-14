@@ -6,6 +6,7 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextSendMessage
 import openai
+from runcode import execute_gpt_code
 
 app = FastAPI(
     title="LINEBOT-API-TALK-A3RT",
@@ -88,6 +89,7 @@ def chatgpt(question: Question) -> str:
     出力形式は厳密なJSON形式を守って。
     {
         'answer': (短い答え),
+        'code': (実行すべきコードpythonコードまたはsql文)
         'type':(返信タイプ code,sql,text)
     }
     """
@@ -109,9 +111,18 @@ def chatgpt(question: Question) -> str:
     #return response.choices[0].message.content.strip()
     content = json.loads(response.choices[0].message.content.strip())
     type = content.get("type","")
+    code = content.get("code","")
+    answer = content.get("answer","")
     if type == "code":
-        return "プログラムを実行しました。"
-    elif type == "text":
+        #ans_text = answer
+        #ans_text += f"\n{code}"
+        gpt_ans, result = execute_gpt_code(code)
+        #return f"プログラムを実行しました。{answer}\n{gpt_ans}"
+        return f"プログラムを実行しました。{gpt_ans}\n{answer}"
+    elif type == "sql":
+        return f"DBアクセスしました。{answer}\n{code}"
+
+    else:
         return content.get("answer","")
 
 
@@ -119,3 +130,7 @@ def chatgpt(question: Question) -> str:
 if __name__ == "__main__":
     app.run()
 
+#
+# uvicorn main:app --host 0.0.0.0 --port 9020 --reload
+#
+#
