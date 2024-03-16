@@ -8,5 +8,7 @@ pip install fastapi
 pip install openai
 pip install linebot
 pip install line-bot-sdk
+pip install python-dotenv
+pip install ipython
 ```
 

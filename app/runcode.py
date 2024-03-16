@@ -28,19 +28,21 @@ def execute_gpt_code(code):
 
     return execution_output, result
 
-# GPTから生成されたコードの例
-gpt_generated_code = """
-def hello_world():
-    print("Hello, world!")
+# Run application
+if __name__ == "__main__":
+    # GPTから生成されたコードの例
+    gpt_generated_code = """
+    def hello_world():
+        print("Hello, world!")
 
-hello_world()
-"""
+    hello_world()
+    """
 
-# コードを実行し、結果を表示
-execution_output, execution_result = execute_gpt_code(gpt_generated_code)
+    # コードを実行し、結果を表示
+    execution_output, execution_result = execute_gpt_code(gpt_generated_code)
 
-print("実行結果:")
-print(execution_output)
-print("\nExecutionResult:")
-print(execution_result)
+    print("出力結果:")
+    print(execution_output)
+    print("\n実行結果の情報:")
+    print(execution_result)
 
