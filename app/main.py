@@ -5,11 +5,21 @@ from pydantic import BaseModel, Field
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextSendMessage
-import openai
+#import openai
 from runcode import execute_gpt_code
 import sys
 from typing import Callable
-
+from openai import OpenAI
+from linebot.exceptions import LineBotApiError
+from system_prompt import system_prompt_str
+#import sqlite3
+from dbaccess import (
+    init_db,
+    save_message,
+    get_last_conversations,
+    save_profile,
+    get_profile
+)
 app = FastAPI(
     title="LINEBOT-API-TALK-A3RT",
     description="LINEBOT-API-TALK-A3RT by FastAPI.",
@@ -27,7 +37,12 @@ load_dotenv()
 # LINE Messaging APIの準備
 line_bot_api = LineBotApi(os.environ["CHANNEL_ACCESS_TOKEN"])
 handler = WebhookHandler(os.environ["CHANNEL_SECRET"])
-openai.api_key =os.environ["OPEN_API_KEY"]
+#openai.api_key =os.environ["OPEN_API_KEY"]
+
+client = OpenAI(
+    # This is the default and can be omitted
+    api_key=os.environ["OPEN_API_KEY"],
+)
 
 # A3RT API
 A3RT_TALKAPI_KEY = os.environ["A3RT_TALKAPI_KEY"]
@@ -36,7 +51,7 @@ A3RT_TALKAPI_URL = os.environ["A3RT_TALKAPI_URL"]
 
 class Question(BaseModel):
     query: str = Field(description="メッセージ")
-
+    userid: str = Field(description="ユーザID")
 
 @app.post("/callback")
 async def callback(
@@ -58,35 +73,38 @@ async def callback(
 # LINE Messaging APIからのメッセージイベントを処理
 @handler.add(MessageEvent)
 def handle_message(event):
-    if event.type != "message" or event.message.type == "text":
-        #ai_message = talk(Question(query=event.message.text))
-        ai_message = chatgpt_func(Question(query=event.message.text))
-        #ai_message = f"テストですよね\n{event.message.text}"
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_message))
-    else:
-        return
 
-@app.post("/talk")
-def talk(question: Question) -> str:
-    """ A3RT Talk API
-    https://a3rt.recruit.co.jp/product/talkAPI/
-    """
-    replay_message = requests.post(
-        A3RT_TALKAPI_URL,
-        {"apikey": A3RT_TALKAPI_KEY, "query": question.query},
-        timeout=5,
-    ).json()
-    if replay_message["status"] != 0:
-        if replay_message["message"] == "empty reply":
-            return "ちょっとわかりません"
+    user_id = event.source.user_id
+    user_message = event.message.text
+
+    try:
+        if event.type != "message" or event.message.type == "text":
+            # ここにメッセージ処理のロジックを記述
+            #ai_message = chatgpt_func(Question(query=event.message.text))
+            ai_message = chatgpt_func(Question(query=user_message,userid=user_id))
+            if not ai_message:
+                ai_message = "申し訳ありません、回答を生成できませんでした。"            
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_message))
+            # メッセージをデータベースに保存
+            save_message(user_id, user_message, ai_message)            
         else:
-            return replay_message["message"]
-    return replay_message["results"][0]["reply"]
+            return
+    except LineBotApiError as e:
+        # LINE APIエラーが発生した場合の処理
+        error_message = f"LINE送信時、エラーが発生しました: {e.message}"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=error_message))
+        print("Line API ERROR:",e)
+    except Exception as e:
+        # その他のエラーが発生した場合の処理
+        error_message = "予期せぬエラーが発生しました。"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=error_message))
+        print(e)
 
 @app.post("/chatgpt")
 def chatgpt(question: Question) -> str:
-    system_message_content = \
-    """
+    
+    add_massage ="""
+    ## 指示
     200字以内の短いコメントを出力。
     出力形式は厳密なJSON形式を守って。
     {
@@ -95,8 +113,9 @@ def chatgpt(question: Question) -> str:
         'type':(返信タイプ code,sql,text)
     }
     """
+    system_message_content = system_prompt_str + add_massage
 
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-3.5-turbo-1106",
         response_format={ "type": "json_object" },
         messages=[
@@ -118,7 +137,7 @@ def chatgpt(question: Question) -> str:
     if type == "code":
         #ans_text = answer
         #ans_text += f"\n{code}"
-        gpt_ans, result = execute_gpt_code(code)
+        gpt_ans = execute_gpt_code(code)
         #return f"プログラムを実行しました。{answer}\n{gpt_ans}"
         return f"プログラムを実行しました。\n{gpt_ans}\n{answer}"
     elif type == "sql":
@@ -127,31 +146,37 @@ def chatgpt(question: Question) -> str:
     else:
         return content.get("answer","")
 
-def get_anime_information(title):
-    return "人間の負の感情から生まれる化け物・呪霊を呪術を使って祓う呪術師の闘いを描いたダークファンタジー・バトル漫画。"
-
 def db_access(sql):
     print(sql)
-    return f"商品の金額は3000円\n{sql}"
+    return f"商品の金額:3000円\n"
 
+def profilling(profile,access_method='read',user_id=None):
+    #print("profile",profile)
+    #print("user_id",user_id)
+    print("access method",access_method)
+    if access_method == 'add':
+        save_profile(profile,user_id)
+    else:
+        profile = get_profile(user_id, limit=30)
+    return profile
 
 my_functions = [
     {
-        "name": "get_anime_information",
-        "description": "与えられたアニメタイトルの情報を返します",
+        "name": "execute_gpt_code",
+        "description": "与えられたpythonコードを実行し、出力された実行結果をそのまま表示し、最後に結果を報告する",
         "parameters": {
             "type": "object",
             "properties": {
-                "title": {
-                    "type": "string", "description": "アニメのタイトル"
+                "code": {
+                    "type": "string", "description": "Pythonコード"
                 },
             },
-            "required": ["title"]
+            "required": ["code"]
         }
     },
     {
         "name": "db_access",
-        "description": "DBにアクセスが必要な場合SQL文を自動生成し、結果を返します",
+        "description": "DBにアクセスが必要な場合、SQL文を自動生成し、結果を返します",
         "parameters": {
             "type": "object",
             "properties": {
@@ -160,22 +185,52 @@ my_functions = [
                     "description": "SQL文"
                 },
             },
-            "required": ["title"]
+            "required": ["sql"]
         }
     },
-]
+    {
+        "name": "profilling",
+        "description": "ユーザのプロフィールの追加・参照をするための関数。登録の場合、ユーザの名前や趣味、その他の属性を記憶するため、ユーザのプロフィールデータを登録します。参照の場合、プロフィールデータから参照します",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "profile": {
+                    "type": "string", 
+                    "description": "プロフィール。名前や趣味、住所、好きなもの、性格など。データ形式はJSONを守ってください。例:{'名前':'山田太郎','好きな物':['温泉','お菓子']}"
+                },
+                "access_method": {
+                    "type": "string", 
+                    "description": "アクセスメソッド(add/read)。登録が必要な場合は'add'、参照だけなら'read'"
+                },
+                "user_id": {
+                    "type": "string", 
+                    "description": "ユーザID（デフォルトはNone）"
+                },
+            },
+            "required": ["profile","access_method"]
+        }
+    },]
 
 # 利用可能な関数を辞書にマッピング
 functions_dict = {
-    "get_anime_information": get_anime_information,
+    "execute_gpt_code": execute_gpt_code,
     "db_access": db_access,
+    "profilling": profilling,
     # 他の関数もここに追加
 }
 
-def call_function(function_name: str, arguments: dict) -> str:
+def call_function(function_name: str, user_id: str,arguments: dict) -> str:
+
+    #print("function_name",function_name)
+
     # 関数をディクショナリから検索
     function: Callable = functions_dict.get(function_name)
     
+    if function_name in ['profilling']:
+        arguments['user_id'] = user_id
+
+    #print("args:",arguments)
+
     # 関数が見つかった場合、引数を使って呼び出し
     if function:
         return function(**arguments)
@@ -184,37 +239,51 @@ def call_function(function_name: str, arguments: dict) -> str:
 
 @app.post("/chatgpt_func")
 def chatgpt_func(question: Question) -> str:
-    system_message_content = \
+    user_id = question.userid
+    profile = get_profile(user_id)
+    system_message_content = system_prompt_str + \
+    f"""
+    ## ユーザのプロファイル
+    {profile}
     """
-    あなたは、優れたアシスタントです。ユーザの要望を的確に把握し、親身な友達のようにそれをサポートします。
-    """
+    past_conversations = get_last_conversations(user_id)
+    # 過去の会話をメッセージリストに追加
+    messages = [
+        {
+            "role": "system",
+            "content": system_message_content
+        },
+    ]
+    for message, response in reversed(past_conversations):
+        messages.append({"role": "user", "content": message})
+        messages.append({"role": "assistant", "content": response})
 
-    response = openai.ChatCompletion.create(
+    # 現在のユーザーの質問を追加
+    messages.append({"role": "user", "content": question.query})
+
+    print("messages:",messages)
+
+    response = client.chat.completions.create(
         #model="gpt-3.5-turbo",
         model="gpt-3.5-turbo-1106",
-        messages=[
-            {
-                "role": "system",
-                "content": system_message_content
-            },
-            {
-                "role": "user",
-                "content": question.query
-            }
-        ],
+        messages=messages,
         functions=my_functions,
         function_call="auto",
     )
     #print(json.dumps(response), file=sys.stderr)
     message = response.choices[0].message
-    if message.get("function_call"):
-        function_name = message["function_call"]["name"]
+    if message.function_call:
+        function_name = message.function_call.name
         # その時の引数dict
-        arguments = json.loads(message["function_call"]["arguments"])
+        arguments = json.loads(message.function_call.arguments)
 
-        last_response = openai.ChatCompletion.create(
+        last_response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
+                {
+                    "role": "system",
+                    "content": system_message_content
+                },
                 {
                     "role": "user",
                     "content": question.query
@@ -222,18 +291,20 @@ def chatgpt_func(question: Question) -> str:
                 {
                     "role": "function",
                     "name": function_name,
-                    "content": call_function(function_name, arguments),
+                    "content": call_function(function_name, user_id,arguments),
                 },
             ],
             functions=my_functions,
             function_call="auto",
         )
-        message = last_response["choices"][0]["message"]
+        message = last_response.choices[0].message
+        print(message.content, file=sys.stderr)
 
-    return message.content.strip()
+    return message.content
 
 # Run application
 if __name__ == "__main__":
+    init_db()
     app.run()
 
 #

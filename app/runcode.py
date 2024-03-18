@@ -6,6 +6,8 @@ def execute_gpt_code(code):
     """
     GPTから生成されたコードをIPython環境で実行し、結果とExecutionResultを返す関数。
     """
+    print("code:",code)
+    
     # IPythonのインタラクティブシェルインスタンスを作成
     ipython_shell = IPython.get_ipython()
 
@@ -25,8 +27,9 @@ def execute_gpt_code(code):
 
     # 実行結果を取得
     execution_output = mystdout.getvalue()
+    print("execution_output:",execution_output)
 
-    return execution_output, result
+    return execution_output
 
 # Run application
 if __name__ == "__main__":
@@ -39,10 +42,10 @@ if __name__ == "__main__":
     """
 
     # コードを実行し、結果を表示
-    execution_output, execution_result = execute_gpt_code(gpt_generated_code)
+    execution_output = execute_gpt_code(gpt_generated_code)
 
     print("出力結果:")
     print(execution_output)
-    print("\n実行結果の情報:")
-    print(execution_result)
+    #print("\n実行結果の情報:")
+    #print(execution_result)
 
