@@ -70,3 +70,21 @@ def get_profile(user_id, limit=3):
     #print("merged_profile:",merged_profile)
 
     return merged_profile
+
+def db_access(sql,db_name,default_limit=5):
+    print("sql:",sql)
+    print("db_name:",db_name)
+    # SQLクエリに LIMIT 句が含まれているか確認し、なければ追加
+    sql = sql.strip().rstrip(';')
+    if "LIMIT" not in sql.upper():
+        sql += f" LIMIT {default_limit}"
+
+    conn = sqlite3.connect(db_name)
+    c = conn.cursor()
+    c.execute(sql)
+    result = c.fetchall()
+    print("result:",result)
+    conn.close()
+
+    return json.dumps(result, ensure_ascii=False, indent=2)
+

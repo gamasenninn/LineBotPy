@@ -18,11 +18,12 @@ from dbaccess import (
     save_message,
     get_last_conversations,
     save_profile,
-    get_profile
+    get_profile,
+    db_access
 )
 app = FastAPI(
-    title="LINEBOT-API-TALK-A3RT",
-    description="LINEBOT-API-TALK-A3RT by FastAPI.",
+    title="LINEBOT-API-CHATGPT",
+    description="LINEBOT-API-CHATGPT by FastAPI.",
     version="1.0",
 )
 
@@ -37,17 +38,11 @@ load_dotenv()
 # LINE Messaging APIの準備
 line_bot_api = LineBotApi(os.environ["CHANNEL_ACCESS_TOKEN"])
 handler = WebhookHandler(os.environ["CHANNEL_SECRET"])
-#openai.api_key =os.environ["OPEN_API_KEY"]
 
 client = OpenAI(
     # This is the default and can be omitted
     api_key=os.environ["OPEN_API_KEY"],
 )
-
-# A3RT API
-A3RT_TALKAPI_KEY = os.environ["A3RT_TALKAPI_KEY"]
-A3RT_TALKAPI_URL = os.environ["A3RT_TALKAPI_URL"]
-
 
 class Question(BaseModel):
     query: str = Field(description="メッセージ")
@@ -80,7 +75,6 @@ def handle_message(event):
     try:
         if event.type != "message" or event.message.type == "text":
             # ここにメッセージ処理のロジックを記述
-            #ai_message = chatgpt_func(Question(query=event.message.text))
             ai_message = chatgpt_func(Question(query=user_message,userid=user_id))
             if not ai_message:
                 ai_message = "申し訳ありません、回答を生成できませんでした。"            
@@ -99,56 +93,6 @@ def handle_message(event):
         error_message = "予期せぬエラーが発生しました。"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=error_message))
         print(e)
-
-@app.post("/chatgpt")
-def chatgpt(question: Question) -> str:
-    
-    add_massage ="""
-    ## 指示
-    200字以内の短いコメントを出力。
-    出力形式は厳密なJSON形式を守って。
-    {
-        'answer': (短い答え),
-        'code': (実行すべきコードpythonコードまたはsql文)
-        'type':(返信タイプ code,sql,text)
-    }
-    """
-    system_message_content = system_prompt_str + add_massage
-
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo-1106",
-        response_format={ "type": "json_object" },
-        messages=[
-            {
-                "role": "system",
-                "content": system_message_content
-            },
-            {
-                "role": "user",
-                "content": question.query
-            }
-        ],
-    )
-    #return response.choices[0].message.content.strip()
-    content = json.loads(response.choices[0].message.content.strip())
-    type = content.get("type","")
-    code = content.get("code","")
-    answer = content.get("answer","")
-    if type == "code":
-        #ans_text = answer
-        #ans_text += f"\n{code}"
-        gpt_ans = execute_gpt_code(code)
-        #return f"プログラムを実行しました。{answer}\n{gpt_ans}"
-        return f"プログラムを実行しました。\n{gpt_ans}\n{answer}"
-    elif type == "sql":
-        return f"DBアクセスしました。{answer}\n{code}"
-
-    else:
-        return content.get("answer","")
-
-def db_access(sql):
-    print(sql)
-    return f"商品の金額:3000円\n"
 
 def profilling(profile,access_method='read',user_id=None):
     #print("profile",profile)
@@ -176,7 +120,38 @@ my_functions = [
     },
     {
         "name": "db_access",
-        "description": "DBにアクセスが必要な場合、SQL文を自動生成し、結果を返します",
+        "description": \
+            "DBにアクセスが必要な場合、次に定義するDBスキーマからSQL文を自動生成し、結果を返します。"
+            "## DB スキーマ"
+            "["
+                "{"
+                    "DB_NAME: chatbot.db,"
+                    "TABLE_NAME: messages,"
+                    "COLUMNS=["
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                        "user_id TEXT NOT NULL,"
+                        "message TEXT NOT NULL,"
+                        "response TEXT,"
+                        "timestamp DATETIME DEFAULT CURRENT_TIMESTAMP"
+                    "]"
+                "},"
+                "{"
+                    "description: 商品の情報、特に在庫に関する質問に便利です"
+                    "在庫数があるものは在庫数量<>0という意味です。"
+                    "DB_NAME: products.db,"
+                    "TABLE_NAME: 商品マスタ,"
+                    "COLUMNS=["
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                        "コード TEXT NOT NULL, #(別名: 仕切、仕切番号)"
+                        "商品名 TEXT NOT NULL,"
+                        "在庫数量 DECIMAL,"
+                    "]"
+                    "EXAMPLE:"
+                        "トラクターの在庫は何台か？: select COUNT(*) from 商品マスタ where 商品名 like '%トラクター%' and 在庫数量>0 "
+                        "仕切11011-1の商品は何？: select * from 商品マスタ where コード = '11011-1' "
+                "}"
+            "]"
+            ,
         "parameters": {
             "type": "object",
             "properties": {
@@ -184,13 +159,18 @@ my_functions = [
                     "type": "string", 
                     "description": "SQL文"
                 },
+                "db_name": {
+                    "type": "string", 
+                    "description": "データベース名"
+                },
+
             },
-            "required": ["sql"]
+            "required": ["sql","db_name"]
         }
     },
     {
         "name": "profilling",
-        "description": "ユーザのプロフィールの追加・参照をするための関数。登録の場合、ユーザの名前や趣味、その他の属性を記憶するため、ユーザのプロフィールデータを登録します。参照の場合、プロフィールデータから参照します",
+        "description": "ユーザのプロフィールの追加・参照をするための関数。ユーザとの会話の中で、新規に発生したプロフィール項目がある場合のみ登録します。登録の場合、ユーザの名前や趣味、その他の属性を記憶するため、ユーザのプロフィールデータをaccess_methodをaddとします。プロフィール照会など、登録が必要のない場合はaccess_methodをreadとします。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -200,8 +180,9 @@ my_functions = [
                 },
                 "access_method": {
                     "type": "string", 
-                    "description": "アクセスメソッド(add/read)。登録が必要な場合は'add'、参照だけなら'read'"
+                    "description": "アクセスメソッド(add/read)。登録の場合は'add'、参照の場合は'read'"
                 },
+                # パラメータの数合わせのためのダミー
                 "user_id": {
                     "type": "string", 
                     "description": "ユーザID（デフォルトはNone）"
@@ -301,6 +282,7 @@ def chatgpt_func(question: Question) -> str:
         print(message.content, file=sys.stderr)
 
     return message.content
+
 
 # Run application
 if __name__ == "__main__":

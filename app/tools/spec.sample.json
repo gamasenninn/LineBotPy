@@ -1,0 +1,35 @@
+{
+    "mysql": {
+      "host": "hksagri",
+      "user": "hikousen",
+      "password": "rs151000",
+      "database": "hksdb"
+    },
+    "sqlite": {
+      "file": "output.db"
+    },
+    "tables": [
+      {
+        "name": "商品マスタ2",
+        "mysql_table": "商品マスタ2",
+        "columns": [
+          {
+            "name": "id",
+            "type": "INTEGER PRIMARY KEY"
+          },
+          {
+            "name": "コード",
+            "type": "TEXT"
+          },
+          {
+            "name": "商品名",
+            "type": "TEXT"
+          },
+          {
+            "name": "在庫数量",
+            "type": "DECIMAL"
+          }
+        ]
+      }
+    ]
+}
