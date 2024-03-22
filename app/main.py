@@ -5,14 +5,12 @@ from pydantic import BaseModel, Field
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextSendMessage
-#import openai
 from runcode import execute_gpt_code
 import sys
 from typing import Callable
 from openai import OpenAI
 from linebot.exceptions import LineBotApiError
-from system_prompt import system_prompt_str
-#import sqlite3
+from system_prompt import system_prompt_str,my_functions
 from dbaccess import (
     init_db,
     save_message,
@@ -21,6 +19,9 @@ from dbaccess import (
     get_profile,
     db_access
 )
+from web_search import get_web_text
+
+
 app = FastAPI(
     title="LINEBOT-API-CHATGPT",
     description="LINEBOT-API-CHATGPT by FastAPI.",
@@ -31,7 +32,6 @@ app = FastAPI(
 @app.get("/")
 def api_root():
     return {"message": "LINEBOT-API is Healthy!"}
-
 
 load_dotenv()
 
@@ -104,105 +104,20 @@ def profilling(profile,access_method='read',user_id=None):
         profile = get_profile(user_id, limit=30)
     return profile
 
-my_functions = [
-    {
-        "name": "execute_gpt_code",
-        "description": "与えられたpythonコードを実行し、出力された実行結果をそのまま表示し、最後に結果を報告する",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string", "description": "Pythonコード"
-                },
-            },
-            "required": ["code"]
-        }
-    },
-    {
-        "name": "db_access",
-        "description": \
-            "DBにアクセスが必要な場合、次に定義するDBスキーマからSQL文を自動生成し、結果を返します。"
-            "## DB スキーマ"
-            "["
-                "{"
-                    "DB_NAME: chatbot.db,"
-                    "TABLE_NAME: messages,"
-                    "COLUMNS=["
-                        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                        "user_id TEXT NOT NULL,"
-                        "message TEXT NOT NULL,"
-                        "response TEXT,"
-                        "timestamp DATETIME DEFAULT CURRENT_TIMESTAMP"
-                    "]"
-                "},"
-                "{"
-                    "description: 商品の情報、特に在庫に関する質問に便利です"
-                    "在庫数があるものは在庫数量<>0という意味です。"
-                    "DB_NAME: products.db,"
-                    "TABLE_NAME: 商品マスタ,"
-                    "COLUMNS=["
-                        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                        "コード TEXT NOT NULL, #(別名: 仕切、仕切番号)"
-                        "商品名 TEXT NOT NULL,"
-                        "在庫数量 DECIMAL,"
-                    "]"
-                    "EXAMPLE:"
-                        "トラクターの在庫は何台か？: select COUNT(*) from 商品マスタ where 商品名 like '%トラクター%' and 在庫数量>0 "
-                        "仕切11011-1の商品は何？: select * from 商品マスタ where コード = '11011-1' "
-                "}"
-            "]"
-            ,
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "sql": {
-                    "type": "string", 
-                    "description": "SQL文"
-                },
-                "db_name": {
-                    "type": "string", 
-                    "description": "データベース名"
-                },
-
-            },
-            "required": ["sql","db_name"]
-        }
-    },
-    {
-        "name": "profilling",
-        "description": "ユーザのプロフィールの追加・参照をするための関数。ユーザとの会話の中で、新規に発生したプロフィール項目がある場合のみ登録します。登録の場合、ユーザの名前や趣味、その他の属性を記憶するため、ユーザのプロフィールデータをaccess_methodをaddとします。プロフィール照会など、登録が必要のない場合はaccess_methodをreadとします。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "profile": {
-                    "type": "string", 
-                    "description": "プロフィール。名前や趣味、住所、好きなもの、性格など。データ形式はJSONを守ってください。例:{'名前':'山田太郎','好きな物':['温泉','お菓子']}"
-                },
-                "access_method": {
-                    "type": "string", 
-                    "description": "アクセスメソッド(add/read)。登録の場合は'add'、参照の場合は'read'"
-                },
-                # パラメータの数合わせのためのダミー
-                "user_id": {
-                    "type": "string", 
-                    "description": "ユーザID（デフォルトはNone）"
-                },
-            },
-            "required": ["profile","access_method"]
-        }
-    },]
 
 # 利用可能な関数を辞書にマッピング
 functions_dict = {
     "execute_gpt_code": execute_gpt_code,
     "db_access": db_access,
     "profilling": profilling,
+    "get_web_text": get_web_text,
+
     # 他の関数もここに追加
 }
 
 def call_function(function_name: str, user_id: str,arguments: dict) -> str:
 
-    #print("function_name",function_name)
+    print("function_name",function_name)
 
     # 関数をディクショナリから検索
     function: Callable = functions_dict.get(function_name)
@@ -244,6 +159,8 @@ def chatgpt_func(question: Question) -> str:
 
     print("messages:",messages)
 
+
+    # 初回の質問。自動振り分けをする。
     response = client.chat.completions.create(
         #model="gpt-3.5-turbo",
         model="gpt-3.5-turbo-1106",
@@ -291,5 +208,4 @@ if __name__ == "__main__":
 
 #
 # uvicorn main:app --host 0.0.0.0 --port 9020 --reload
-#
 #
