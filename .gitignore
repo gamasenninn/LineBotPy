@@ -162,3 +162,4 @@ linebot/
 *.db
 app/tools/spec.json
 app/tools/mytest.py
+app/chatbot.db
