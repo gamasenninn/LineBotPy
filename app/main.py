@@ -175,6 +175,7 @@ def chatgpt_func(question: Question) -> str:
         # その時の引数dict
         arguments = json.loads(message.function_call.arguments)
 
+        # TODO: 過去の会話履歴をぶち込むかどうか検討
         last_response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
