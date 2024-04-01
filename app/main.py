@@ -70,6 +70,12 @@ async def callback(
 def handle_message(event):
 
     user_id = event.source.user_id
+    group_id = event.source.group_id if hasattr(event.source, 'group_id') else ''
+
+    print("type:",event.source.type)
+    print("user:",user_id)
+    print("group:",group_id)
+
     user_message = event.message.text
 
     try:
