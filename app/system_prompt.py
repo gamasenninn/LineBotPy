@@ -20,7 +20,9 @@ system_prompt_str=\
 my_functions = [
     {
         "name": "execute_gpt_code",
-        "description": "与えられたpythonコードを実行し、出力された実行結果をそのまま表示し、最後に結果を報告する",
+        "description": "与えられたpythonコードを実行し、出力された実行結果をそのまま表示し、最後に結果を報告する"
+        "数値を計算する場合、漢字などの表現は数字に変換する（例25万4千360円->254360）などしてコードで実行可能なパラメータとして扱うこと"
+        ,
         "parameters": {
             "type": "object",
             "properties": {
